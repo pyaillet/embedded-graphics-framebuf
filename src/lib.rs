@@ -6,23 +6,33 @@ use embedded_graphics::{
 };
 
 #[repr(transparent)]
-#[derive(Copy, Clone)]
-pub struct FrameBuf<C: PixelColor, const X: usize, const Y: usize>(pub [[C; X]; Y]);
+#[derive(Clone)]
+pub struct FrameBuf<C: PixelColor, const X: usize, const Y: usize, const TOTAL: usize>(pub [C; TOTAL]);
 
-impl<C: PixelColor + Default, const X: usize, const Y: usize> FrameBuf<C, X, Y> {
+pub trait AsWords<const TOTAL: usize> {
+    fn as_words(&mut self) -> &mut [u16; TOTAL];
+}
+
+impl<C: PixelColor, const X: usize, const Y: usize, const TOTAL: usize> AsWords<TOTAL> for FrameBuf<C, X, Y, TOTAL> {
+    fn as_words(&mut self) -> &mut [u16; TOTAL] {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+
+impl<C: PixelColor + Default, const X: usize, const Y: usize, const TOTAL: usize> FrameBuf<C, X, Y, TOTAL> {
     /// Set all pixels to black.
     pub fn clear_black(&mut self) {
         for x in 0..X {
             for y in 0..Y {
-                self.0[y][x] = C::default();
+                self.0[y * X + x] = C::default();
             }
         }
     }
 }
 
-impl<'a, C: PixelColor, const X: usize, const Y: usize> IntoIterator for &'a FrameBuf<C, X, Y> {
+impl<'a, C: PixelColor, const X: usize, const Y: usize, const TOTAL: usize> IntoIterator for &'a FrameBuf<C, X, Y, TOTAL> {
     type Item = C;
-    type IntoIter = FrameBufIntoIterator<'a, C, X, Y>;
+    type IntoIter = FrameBufIntoIterator<'a, C, X, Y, TOTAL>;
 
     fn into_iter(self) -> Self::IntoIter {
         FrameBufIntoIterator {
@@ -31,13 +41,13 @@ impl<'a, C: PixelColor, const X: usize, const Y: usize> IntoIterator for &'a Fra
         }
     }
 }
-pub struct FrameBufIntoIterator<'a, C: PixelColor, const X: usize, const Y: usize> {
-    fbuf: &'a FrameBuf<C, X, Y>,
+pub struct FrameBufIntoIterator<'a, C: PixelColor, const X: usize, const Y: usize, const TOTAL: usize> {
+    fbuf: &'a FrameBuf<C, X, Y, TOTAL>,
     index: usize,
 }
 
-impl<'a, C: PixelColor, const X: usize, const Y: usize> Iterator
-    for FrameBufIntoIterator<'a, C, X, Y>
+impl<'a, C: PixelColor, const X: usize, const Y: usize, const TOTAL: usize> Iterator
+    for FrameBufIntoIterator<'a, C, X, Y, TOTAL>
 {
     type Item = C;
     fn next(&mut self) -> Option<C> {
@@ -48,17 +58,17 @@ impl<'a, C: PixelColor, const X: usize, const Y: usize> Iterator
             return None;
         }
         self.index += 1;
-        Some(self.fbuf.0[y][x])
+        Some(self.fbuf.0[y * X + x])
     }
 }
 
-impl<C: PixelColor, const X: usize, const Y: usize> OriginDimensions for FrameBuf<C, X, Y> {
+impl<C: PixelColor, const X: usize, const Y: usize, const TOTAL: usize> OriginDimensions for FrameBuf<C, X, Y, TOTAL> {
     fn size(&self) -> Size {
         Size::new(X as u32, Y as u32)
     }
 }
 
-impl<C: PixelColor, const X: usize, const Y: usize> DrawTarget for FrameBuf<C, X, Y> {
+impl<C: PixelColor, const X: usize, const Y: usize, const TOTAL: usize> DrawTarget for FrameBuf<C, X, Y, TOTAL> {
     type Color = C;
     type Error = core::convert::Infallible;
 
@@ -69,7 +79,7 @@ impl<C: PixelColor, const X: usize, const Y: usize> DrawTarget for FrameBuf<C, X
         for Pixel(coord, color) in pixels.into_iter() {
             if coord.x >= 0 && coord.x < X as i32 && coord.y >= 0 && coord.y < Y as i32 {
                 let Point { x, y } = coord;
-                self.0[y as usize][x as usize] = color;
+                self.0[y as usize * X + x as usize] = color;
             }
         }
         Ok(())
@@ -78,7 +88,7 @@ impl<C: PixelColor, const X: usize, const Y: usize> DrawTarget for FrameBuf<C, X
     fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
         for x in 0..X {
             for y in 0..Y {
-                self.0[y][x] = color;
+                self.0[y * X + x] = color;
             }
         }
         Ok(())
